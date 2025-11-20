@@ -1,0 +1,28 @@
+[package]
+name = "safe_pump"
+version = "4.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "safe_pump"
+
+[dependencies]
+anchor-lang = "0.31.1"
+anchor-spl = { version = "0.31.1", default-features = false }
+spl-token = "6.0.0"
+spl-associated-token-account = "4.0.0"
+spl-memo = "6.0.0"
+spl-type-length-value = "0.5.0"
+spl-discriminator = "0.5.0"
+spl-program-error = "0.5.0"
+raydium-cp-swap = { path = "./raydium-cp-swap/programs/cp-swap", features = ["cpi"] }
+seed_coin = { path = "../seed_coin", features = ["cpi"] }
+
+# **INTERFACE ONLY**
+safe_pump_interface = { path = "../safe_pump_interface", features = ["cpi"] }
+
+[features]
+cpi = []
+default = ["cpi"]

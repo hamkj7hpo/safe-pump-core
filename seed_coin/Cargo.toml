@@ -1,0 +1,18 @@
+[package]
+name = "seed_coin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+anchor-spl = "0.31.1"
+
+# Reference to mothership (for CPI back)
+mothership = { path = "../safe_pump", features = ["cpi"] }
+
+[features]
+cpi = []

@@ -1,0 +1,21 @@
+[toolchain]
+anchor_version = "0.31.1"
+solana_version = "2.3.0"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+safe_pump = "JBjKCmvSK3dMPfKk1WGD8nZfw8yAZHtuZ3GLo7NpCHX7"
+seed_coin = "YOUR_SEED_COIN_PROGRAM_ID_HERE"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["safe_pump", "seed_coin"]

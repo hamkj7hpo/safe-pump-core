@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "safe_pump",
+    "seed_coin",
+    "safe_pump_interface",
+]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true
+
+[patch.crates-io]
+solana-zk-token-sdk = { path = "patches/zk-token-sdk" }
+spl-token-2022 = { path = "patches/spl-token-2022" }
+solana-zk-sdk = { path = "patches/solana-zk-sdk" }

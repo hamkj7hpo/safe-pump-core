@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "safe_pump",
+    "seed_coin",
+]
+resolver = "2"

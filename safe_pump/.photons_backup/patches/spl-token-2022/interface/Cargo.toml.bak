@@ -1,0 +1,94 @@
+[package]
+name = "spl-token-2022-interface"
+version = "2.1.0"
+description = "Solana Program Library Token 2022 Interface"
+documentation = "https://docs.rs/spl-token-2022-interface"
+readme = "README.md"
+authors = [ "SafePump",]
+repository = "https://github.com/hamkj7hpo/safe-pump"
+homepage = "https://safe-pump.fun"
+license = "MIT"
+
+[features]
+serde = [ "dep:serde", "dep:serde_with", "dep:base64", "spl-pod/serde-traits", "solana-pubkey/serde",]
+
+[dependencies]
+arrayref = "0.3.9"
+num-derive = "0.4"
+num-traits = "0.2"
+num_enum = "0.7.5"
+solana-account-info = "3.0.0"
+solana-instruction = "3.0.0"
+solana-program-error = "3.0.0"
+solana-program-option = "3.0.0"
+solana-program-pack = "3.0.0"
+solana-pubkey = "3.0.0"
+solana-sdk-ids = "3.0.0"
+solana-zk-sdk = "4.0.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+proptest = "1.9"
+serde_json = "1.0.145"
+strum = "0.27"
+strum_macros = "0.27"
+
+[lib]
+crate-type = [ "lib",]
+
+[lints]
+
+[package.edition]
+
+[dependencies.bytemuck]
+version = "1.24.0"
+features = [ "derive",]
+
+[dependencies.spl-token-confidential-transfer-proof-extraction]
+version = "0.5.0"
+path = "../confidential/proof-extraction"
+
+[dependencies.spl-token-group-interface]
+version = "0.7.1"
+
+[dependencies.spl-token-metadata-interface]
+version = "0.8.0"
+
+[dependencies.spl-type-length-value]
+version = "0.9.0"
+
+[dependencies.spl-pod]
+version = "0.7.0"
+
+[dependencies.serde]
+version = "1.0.219"
+optional = true
+
+[dependencies.serde_with]
+version = "3.15.1"
+optional = true
+
+[dependencies.base64]
+version = "0.22.1"
+optional = true
+
+[dev-dependencies.solana-pubkey]
+version = "3.0.0"
+features = [ "curve25519",]
+
+[dev-dependencies.spl-token-interface]
+version = "2.0"
+
+[dev-dependencies.spl-token-2022-interface]
+path = "."
+features = [ "serde",]
+
+[package.metadata.solana]
+program-id = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+
+[package.metadata.docs.rs]
+targets = [ "x86_64-unknown-linux-gnu",]
+
+[target."cfg(not(target_os = \"solana\"))".dependencies.spl-token-confidential-transfer-proof-generation]
+version = "0.5.0"
+path = "../confidential/proof-generation"
