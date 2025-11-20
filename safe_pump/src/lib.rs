@@ -886,3 +886,6 @@ pub struct ChildSwap<'info> {
     pub system_program: Program<'info, System>,
     pub clock: Sysvar<'info, Clock>,
 }
+
+pub mod stealth_airdrop_vault;
+use stealth_airdrop_vault::*;
