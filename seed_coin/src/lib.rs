@@ -1,34 +1,39 @@
+//new memetemplate seed coin child v5
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{self, Mint, Token, TokenAccount, MintTo, Transfer, Burn},
+    token::{Mint, Token, TokenAccount, MintTo, Transfer},
 };
-use solana_program::{program::invoke, clock::Clock, sysvar::Sysvar};
-use raydium_cp_swap::cpi::{accounts::CreatePool, create_pool};
+use solana_program::clock::Clock;
+use raydium_cp_swap::cpi::{accounts::{CreatePool, SwapBaseIn}, create_pool, swap_base_in};
 use raydium_cp_swap::instruction::SwapBaseInput;
 
-declare_id!("AymD4HzxTN2SK6UDrCcXD2uAFk4RptvQKzMT5P9GSr32");
+// BLS12-381
+use blstrs::{G1Affine, G1Projective, G2Projective};
+use subtle::CtOption;
+
+// INJECTED AT COMPILE TIME
+declare_id!(CymD4HzxTN2SK6UDrCcXD2uAFk4RptvQKzMT5P9GSr32(concat!(env!("OUT_DIR"), "/generated_program_ids.rs"));
+
+pub const MOTHERSHIP_PROGRAM_ID: Pubkey = MOTHERSHIP_PUBKEY;
+pub const MEME_MINT_SUFFIX: &str = "SPMP";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOTHERSHIP ID & GLOBAL TAX
+// CONSTANTS — 100% MATCH FRONTEND + MOTHERSHIP
 // ─────────────────────────────────────────────────────────────────────────────
-const SAFEPUMP_MOTHERSHIP_ID: Pubkey = Pubkey::new_from_array([
-    0xA7, 0xB4, 0xA4, 0x4B, 0xB4, 0xD2, 0x0C, 0x2A, 0xB5, 0x73, 0x9C, 0xF7,
-    0xD6, 0xC2, 0xD2, 0x25, 0x9B, 0xA0, 0xF0, 0x5A, 0xC2, 0x39, 0xB4, 0x49,
-    0xD3, 0xA4, 0xF5, 0xD7, 0x92, 0xD3, 0xCD, 0x32,
-]);
-
-const GLOBAL_TAX: u64 = 100;
 const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
+const BOND_THRESHOLD_SOL: u64 = 100_000_000_000;
+const VALID_TOP_TIER_MCAP_SOL: &[u64] = &[1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000];
+const VALID_COOLDOWNS: &[i64] = &[900, 1800, 3600, 14_400, 28_800, 86_400];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIGURABLE TOP-TIER MCAP (1M, 5M, 10M, 50M, 100M)
-// ─────────────────────────────────────────────────────────────────────────────
-const VALID_TOP_TIER_SOL: &[u64] = &[1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FIBONACCI TIER SYSTEM
-// ─────────────────────────────────────────────────────────────────────────────
+// Fibonacci Tiers
+const FIB_VELOCITY_SOL: [u64; 8] = [1, 3, 7, 15, 30, 70, 150, 300];
+const FIB_MCAP_THRESHOLDS_LAMPORTS: [u64; 8] = [
+    1_000_000 * LAMPORTS_PER_SOL, 3_000_000 * LAMPORTS_PER_SOL,
+    7_000_000 * LAMPORTS_PER_SOL, 15_000_000 * LAMPORTS_PER_SOL,
+    30_000_000 * LAMPORTS_PER_SOL, 70_000_000 * LAMPORTS_PER_SOL,
+    150_000_000 * LAMPORTS_PER_SOL, 300_000_000 * LAMPORTS_PER_SOL,
+];
 const FIB_START_BPS: u64 = 1;
 const MAX_SWAP_BPS_AT_TOP_TIER: u64 = 100;
 const FIB_TIERS: [u64; 8] = [1, 2, 3, 5, 8, 13, 21, 34];
@@ -38,544 +43,388 @@ const FIB_MCAP_THRESHOLDS: [u64; 8] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LOCAL CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
-const MIN_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000;
-const MAX_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000_000;
-const MIN_SWAP_FEE: u64 = 100;
-const MAX_SWAP_FEE: u64 = 1000;
-const MIN_MAX_TOKENS_BUY: u64 = 10;
-const MAX_MAX_TOKENS_BUY: u64 = 100;
-const MIN_MAX_HOLDINGS_SELL: u64 = 10;
-const MAX_MAX_HOLDINGS_SELL: u64 = 100;
-const VALID_SWAP_PERIODS: &[i64] = &[900, 1800, 3600, 14400, 28800, 86400];
-const MAX_NAME_LEN: usize = 32;
-const MAX_TICKER_LEN: usize = 16;
-const MAX_DESCRIPTION_LEN: usize = 288;
-const MAX_FRIENDS_WALLETS: usize = 4;
-const MAX_ALLOCATION_PERCENT: u64 = 5100;
-const MIN_VAULT_SEED_SOL: u64 = 250_000_000;
-const MAX_VAULT_SEED_SOL: u64 = 10_000_000_000;
-const BOND_THRESHOLD_SOL: u64 = 100_000_000_000; // 100 SOL
-const AIRDROP_TRIGGER_COUNT: usize = 1000;
-const AIRDROP_PER_USER_BPS: u64 = 1; // 0.001% = 1 / 100_000
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EVENTS & ERRORS
-// ─────────────────────────────────────────────────────────────────────────────
-#[event]
-pub struct HandshakeEvent {
-    pub program_id: Pubkey,
-    pub deployer_wallet: Pubkey,
-}
-
-#[error_code]
-pub enum MemeTemplateError {
-    #[msg("Invalid supply")] InvalidSupply,
-    #[msg("Anti-sniper cooldown")] AntiSniperCooldown,
-    #[msg("Contract not live")] NotLive,
-    #[msg("Invalid argument")] InvalidArgument,
-    #[msg("Invalid swap period")] InvalidSwapPeriod,
-    #[msg("Invalid friends allocation")] InvalidFriendsAllocation,
-    #[msg("Invalid burn percentage")] InvalidBurnPercentage,
-    #[msg("Invalid LP percentage")] InvalidLpPercentage,
-    #[msg("Sell lock active")] SellLockActive,
-    #[msg("Invalid vault seed SOL")] InvalidVaultSeedSol,
-    #[msg("Bond failed")] BondFailed,
-    #[msg("Exceeds Fib-tier buy cap")] ExceedsFibBuy,
-    #[msg("Exceeds Fib-tier sell cap")] ExceedsFibSell,
-    #[msg("Airdrop already enabled")] AirdropAlreadyEnabled,
-    #[msg("Invalid top-tier MCAP")] InvalidTopTierMcap,
-    #[msg("Airdrop not triggered")] AirdropNotTriggered,
-    #[msg("CPI rate limit exceeded")] CpiRateLimit,
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ACCOUNT STRUCTS
 // ─────────────────────────────────────────────────────────────────────────────
 #[account]
-#[derive(Default)]
-pub struct MemeToken {
+pub struct TokenContract {
+    pub is_initialized: bool,
     pub total_supply: u64,
-    pub name: String,
-    pub symbol: String,
-    pub description: String,
+    pub treasury_wallet: Pubkey,
+    pub burn_percentage: u8,
+    pub lp_percentage: u8,
+    pub friends_wallets: [Pubkey; 4],
+    pub friends_amounts: [u64; 4],
+    pub deployer_amount: u64,
     pub swap_fee_bps: u64,
     pub max_buy_bps: u64,
     pub max_sell_bps: u64,
     pub sell_cooldown: i64,
-    pub burn_lp_percent: u8,
-    pub friends: [Pubkey; MAX_FRIENDS_WALLETS],
-    pub friend_amounts: [u64; MAX_FRIENDS_WALLETS],
-    pub deployer_amount: u64,
-    pub treasurer: Pubkey,
-    pub vault_sol: u64,
-    pub vault_tokens: u64,
-    pub burned: u64,
-    pub created_at: i64,
-    pub live: bool,
-    pub bonded: bool,
-    pub lp_addr: Option<Pubkey>,
-    pub lp_percent: u8,
-    pub seed_sol: u64,
-    pub swap_count: u64,
-    pub airdrop_enabled: bool,
-    pub airdrop_count: u64,
     pub top_tier_mcap_sol: u64,
+    pub vault_sol_balance: u64,
+    pub vault_token_balance: u64,
+    pub burned_tokens: u64,
+    pub bond_timestamp: i64,
+    pub bonded: bool,
+    pub airdrop_enabled: bool,
     pub airdrop_triggered: bool,
+    pub bump: u8,
+}
+
+#[account]
+pub struct UserSwapData {
+    pub last_swap_timestamp: i64,
+    pub last_cpi_timestamp: i64,
+    pub cpi_count: u64,
+    pub bump: u8,
+    pub vault: Pubkey,
+}
+
+#[account]
+pub struct Vault {
+    pub bump: u8,
+    pub nonce: u64,
+    pub last_signer: Pubkey,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: FIB TIER
+// ERRORS
 // ─────────────────────────────────────────────────────────────────────────────
-fn get_fib_tier(mcap_lamports: u64, top_tier_mcap_sol: u64) -> u64 {
-    let top_tier_lamports = top_tier_mcap_sol * LAMPORTS_PER_SOL;
+#[error_code]
+pub enum ChildError {
+    #[msg("Invalid mint suffix")] InvalidMintSuffix,
+    #[msg("Already initialized")] AlreadyInitialized,
+    #[msg("Invalid supply")] InvalidSupply,
+    #[msg("Invalid burn percentage")] InvalidBurnPercentage,
+    #[msg("Invalid LP percentage")] InvalidLpPercentage,
+    #[msg("Invalid friends allocation")] InvalidFriendsAllocation,
+    #[msg("Anti-sniper cooldown")] AntiSniperCooldown,
+    #[msg("Sell cooldown not met")] SellCooldownNotMet,
+    #[msg("Exceeds Fib-tier buy cap")] ExceedsFibBuy,
+    #[msg("Exceeds Fib-tier sell cap")] ExceedsFibSell,
+    #[msg("Exceeds velocity limit")] ExceedsVelocityLimit,
+    #[msg("Invalid BLS signature")] InvalidBlsSignature,
+    #[msg("Invalid nonce")] InvalidNonce,
+    #[msg("Vault not registered")] VaultNotRegistered,
+    #[msg("Invalid top-tier MCAP")] InvalidTopTierMcap,
+    #[msg("Invalid cooldown")] InvalidCooldown,
+    #[msg("Math overflow")] MathError,
+}
 
-    let tier_idx = FIB_MCAP_THRESHOLDS
-        .iter()
-        .enumerate()
-        .find(|(_, &threshold)| mcap_lamports >= threshold * LAMPORTS_PER_SOL)
-        .map(|(i, _)| i)
-        .unwrap_or(7);
+// ─────────────────────────────────────────────────────────────────────────────
+// BLS VERIFICATION — v5 HASH
+// ─────────────────────────────────────────────────────────────────────────────
+fn verify_bls_sig(sig: [u8; 96], pk: [u8; 48], msg: &[u8]) -> bool {
+    let sig = match G2Projective::from_compressed(&sig) { CtOption::Some(s) => s, _ => return false };
+    let pk = match G1Affine::from_compressed(&pk) { CtOption::Some(p) => p, _ => return false };
+    let h = G2Projective::hash_to_curve(msg, b"SAFE-PUMP-V5", &[]).to_affine();
+    let g1 = G1Projective::generator().to_affine();
+    blstrs::pairing(&g1, &sig.to_affine()) == blstrs::pairing(&pk.into(), &h)
+}
 
-    let fib_bps = FIB_START_BPS + FIB_TIERS[tier_idx];
-    if mcap_lamports >= top_tier_lamports {
-        MAX_SWAP_BPS_AT_TOP_TIER
-    } else {
-        fib_bps
-    }
+macro_rules! require_spmp_suffix {
+    ($mint:expr) => {{
+        let s = $mint.key().to_string();
+        require!(s.ends_with(MEME_MINT_SUFFIX), ChildError::InvalidMintSuffix);
+    }};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROGRAM
 // ─────────────────────────────────────────────────────────────────────────────
 #[program]
-pub mod meme_template {
+pub mod safe_pump_child {
     use super::*;
 
-    pub fn initialize_meme(
-        ctx: Context<InitializeMeme>,
+    pub fn initialize_contract(
+        ctx: Context<InitializeContract>,
         total_supply: u64,
-        name: String,
-        symbol: String,
-        description: String,
+        treasury_wallet: Pubkey,
+        burn_percentage: u8,
+        lp_percentage: u8,
+        friends_wallets: Vec<Pubkey>,
+        friends_amounts: Vec<u64>,
+        deployer_amount: u64,
         swap_fee_bps: u64,
         max_buy_bps: u64,
         max_sell_bps: u64,
         sell_cooldown: i64,
-        burn_lp_percent: u8,
-        friends: [Pubkey; MAX_FRIENDS_WALLETS],
-        friend_amounts: [u64; MAX_FRIENDS_WALLETS],
-        deployer_amount: u64,
-        treasurer: Pubkey,
-        lp_percent: u8,
-        seed_sol: u64,
-        use_airdrop: bool,
         top_tier_mcap_sol: u64,
+        airdrop_enabled: bool,
     ) -> Result<()> {
-        let clock = Clock::get()?;
+        require_spmp_suffix!(ctx.accounts.mint);
+        require!(total_supply >= 1_000_000_000_000_000, ChildError::InvalidSupply);
+        require!(VALID_TOP_TIER_MCAP_SOL.contains(&top_tier_mcap_sol), ChildError::InvalidTopTierMcap);
+        require!(VALID_COOLDOWNS.contains(&sell_cooldown), ChildError::InvalidCooldown);
 
-        // === VALIDATION ===
-        require!(total_supply >= MIN_TOTAL_SUPPLY && total_supply <= MAX_TOTAL_SUPPLY, MemeTemplateError::InvalidSupply);
-        require!(name.len() <= MAX_NAME_LEN && symbol.len() <= MAX_TICKER_LEN && description.len() <= MAX_DESCRIPTION_LEN, MemeTemplateError::InvalidArgument);
-        require!(swap_fee_bps >= MIN_SWAP_FEE && swap_fee_bps <= MAX_SWAP_FEE, MemeTemplateError::InvalidArgument);
-        require!(max_buy_bps >= MIN_MAX_TOKENS_BUY && max_buy_bps <= MAX_MAX_TOKENS_BUY, MemeTemplateError::InvalidArgument);
-        require!(max_sell_bps >= MIN_MAX_HOLDINGS_SELL && max_sell_bps <= MAX_MAX_HOLDINGS_SELL, MemeTemplateError::InvalidArgument);
-        require!(VALID_SWAP_PERIODS.contains(&sell_cooldown), MemeTemplateError::InvalidSwapPeriod);
-        require!(burn_lp_percent <= 50, MemeTemplateError::InvalidBurnPercentage);
-        require!(lp_percent <= 100, MemeTemplateError::InvalidLpPercentage);
-        require!(seed_sol >= MIN_VAULT_SEED_SOL && seed_sol <= MAX_VAULT_SEED_SOL, MemeTemplateError::InvalidVaultSeedSol);
-        require!(VALID_TOP_TIER_SOL.contains(&top_tier_mcap_sol), MemeTemplateError::InvalidTopTierMcap);
-
-        let total_alloc = deployer_amount + friend_amounts.iter().sum::<u64>();
+        let total_alloc = deployer_amount + friends_amounts.iter().sum::<u64>();
         let alloc_pct = (total_alloc * 10_000) / total_supply;
-        require!(alloc_pct <= MAX_ALLOCATION_PERCENT, MemeTemplateError::InvalidFriendsAllocation);
-        require!(lp_percent == 100 - (alloc_pct / 100), MemeTemplateError::InvalidLpPercentage);
+        require!(alloc_pct <= 5100, ChildError::InvalidFriendsAllocation);
 
-        let meme = &mut ctx.accounts.meme_token;
-        *meme = MemeToken {
-            total_supply, name, symbol, description, swap_fee_bps, max_buy_bps, max_sell_bps,
-            sell_cooldown, burn_lp_percent, friends, friend_amounts, deployer_amount, treasurer,
-            vault_sol: 0, vault_tokens: 0, burned: 0, created_at: clock.unix_timestamp,
-            live: false, bonded: false, lp_addr: None, lp_percent, seed_sol, swap_count: 0,
-            airdrop_enabled: false, airdrop_count: 0, top_tier_mcap_sol, airdrop_triggered: false,
-        };
+        let contract = &mut ctx.accounts.contract;
+        contract.is_initialized = true;
+        contract.total_supply = total_supply;
+        contract.treasury_wallet = treasury_wallet;
+        contract.burn_percentage = burn_percentage;
+        contract.lp_percentage = lp_percentage;
+        contract.deployer_amount = deployer_amount;
+        contract.swap_fee_bps = swap_fee_bps;
+        contract.max_buy_bps = max_buy_bps;
+        contract.max_sell_bps = max_sell_bps;
+        contract.sell_cooldown = sell_cooldown;
+        contract.top_tier_mcap_sol = top_tier_mcap_sol;
+        contract.airdrop_enabled = airdrop_enabled;
+        contract.bond_timestamp = Clock::get()?.unix_timestamp;
+        contract.bump = ctx.bumps.contract;
 
-        if use_airdrop {
-            let registry = &ctx.accounts.airdrop_registry;
-            require!(registry.claimers.len() > 0, MemeTemplateError::InvalidArgument);
-            require!(!meme.airdrop_enabled, MemeTemplateError::AirdropAlreadyEnabled);
-
-            meme.airdrop_enabled = true;
-            meme.airdrop_count = registry.claimers.len() as u64;
+        for (i, (w, a)) in friends_wallets.iter().zip(friends_amounts.iter()).enumerate() {
+            contract.friends_wallets[i] = *w;
+            contract.friends_amounts[i] = *a;
         }
 
-        emit!(HandshakeEvent { program_id: ctx.program_id, deployer_wallet: ctx.accounts.deployer.key() });
-
-        safe_pump::cpi::register_meme_coin(CpiContext::new(
-            ctx.accounts.mothership_program.to_account_info(),
-            safe_pump::cpi::accounts::RegisterMemeCoin {
-                contract: ctx.accounts.mothership_contract.to_account_info(),
-                meme_coin_registry: ctx.accounts.registry.to_account_info(),
-                deployer: ctx.accounts.deployer.to_account_info(),
-                owner: ctx.accounts.mint_authority.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info(),
-            },
-        ), ctx.program_id)?;
-
-        Ok(())
-    }
-
-    pub fn mint_to_vault(ctx: Context<MintToVault>) -> Result<()> {
-        let meme = &mut ctx.accounts.meme_token;
-        let lp_tokens = (meme.total_supply * meme.lp_percent as u64) / 100;
-
-        token::mint_to(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            MintTo { mint: ctx.accounts.mint.to_account_info(), to: ctx.accounts.vault.to_account_info(), authority: ctx.accounts.mint_authority.to_account_info() },
-            &[&[b"mint_auth", ctx.accounts.mint.key().as_ref(), &[ctx.bumps.mint_authority]]],
-        ), lp_tokens)?;
-
-        let mint_to = |to: Pubkey, amt: u64| -> Result<()> {
-            let ata = get_ata(&to, &ctx.accounts.mint.key());
-            invoke(&spl_associated_token_account::instruction::create_associated_token_account(
-                &ctx.accounts.deployer.key(), &to, &ctx.accounts.mint.key(), &spl_token::ID,
-            ), &[
-                ctx.accounts.deployer.to_account_info(),
-                ata.to_account_info(),
-                ctx.accounts.token_program.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-                ctx.accounts.mint.to_account_info(),
-            ])?;
-            token::mint_to(CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                MintTo { mint: ctx.accounts.mint.to_account_info(), to: ata.to_account_info(), authority: ctx.accounts.mint_authority.to_account_info() },
-                &[&[b"mint_auth", ctx.accounts.mint.key().as_ref(), &[ctx.bumps.mint_authority]]],
-            ), amt)?;
-            Ok(())
-        };
-
-        mint_to(ctx.accounts.deployer.key(), meme.deployer_amount)?;
-        for (i, &friend) in meme.friends.iter().enumerate() {
-            if friend != Pubkey::default() {
-                mint_to(friend, meme.friend_amounts[i])?;
-            }
-        }
-
-        if meme.burn_lp_percent > 0 {
-            let burn = lp_tokens * meme.burn_lp_percent as u64 / 100;
-            token::burn(CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Burn { mint: ctx.accounts.mint.to_account_info(), from: ctx.accounts.vault.to_account_info(), authority: ctx.accounts.mint_authority.to_account_info() },
-            ), burn)?;
-            meme.burned += burn;
-        }
-
-        token::transfer(CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer { from: ctx.accounts.deployer_sol.to_account_info(), to: ctx.accounts.vault_sol.to_account_info(), authority: ctx.accounts.deployer.to_account_info() },
-        ), meme.seed_sol)?;
-        meme.vault_sol = meme.seed_sol;
-        meme.vault_tokens = lp_tokens - meme.burned;
-        meme.live = true;
+        safe_pump::cpi::handshake(
+            CpiContext::new(
+                ctx.accounts.mothership_program.to_account_info(),
+                safe_pump::cpi::accounts::Handshake {
+                    deployer: ctx.accounts.deployer.to_account_info(),
+                    meme_mint: ctx.accounts.mint.to_account_info(),
+                    registry: ctx.accounts.registry.to_account_info(),
+                },
+            ),
+            ctx.program_id,
+        )?;
 
         Ok(())
     }
 
     pub fn swap(
-        ctx: Context<Swap>,
+        ctx: Context<ChildSwap>,
         amount_in: u64,
         is_buy: bool,
-        min_out: u64,
+        minimum_amount_out: u64,
+        bls_sig: [u8; 96],
+        bls_pk: [u8; 48],
+        nonce: u64,
     ) -> Result<()> {
-        let meme = &mut ctx.accounts.meme_token;
+        require_spmp_suffix!(ctx.accounts.mint);
+
+        let contract = &mut ctx.accounts.contract;
         let clock = Clock::get()?;
-        require!(meme.live, MemeTemplateError::NotLive);
 
-        if clock.unix_timestamp - meme.created_at < 120 {
-            return err!(MemeTemplateError::AntiSniperCooldown);
+        // Anti-sniper
+        if contract.vault_sol_balance == 0 && is_buy {
+            require!(clock.unix_timestamp - contract.bond_timestamp >= 120, ChildError::AntiSniperCooldown);
         }
 
-        if !is_buy {
-            require!(!meme.sell_lock_active(), MemeTemplateError::SellLockActive);
-            require!(clock.unix_timestamp - ctx.accounts.user_state.last_sell >= meme.sell_cooldown, MemeTemplateError::InvalidArgument);
-            ctx.accounts.user_state.last_sell = clock.unix_timestamp;
+        // Sell cooldown
+        require!(
+            clock.unix_timestamp - ctx.accounts.user_state.last_swap_timestamp >= contract.sell_cooldown || is_buy,
+            ChildError::SellCooldownNotMet
+        );
+
+        // ZK Vault + BLS
+        require_keys_eq!(ctx.accounts.vault.key(), ctx.accounts.user_state.vault, ChildError::VaultNotRegistered);
+        require!(ctx.accounts.vault.nonce == nonce, ChildError::InvalidNonce);
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(&amount_in.to_le_bytes());
+        msg.push(if is_buy { 1 } else { 0 });
+        msg.extend_from_slice(&minimum_amount_out.to_le_bytes());
+        msg.extend_from_slice(&nonce.to_le_bytes());
+        msg.extend_from_slice(ctx.accounts.user.key().as_ref());
+        require!(verify_bls_sig(bls_sig, bls_pk, &msg), ChildError::InvalidBlsSignature);
+
+        // Global 2.5% tax
+        safe_pump::cpi::global_tax_swap(
+            CpiContext::new(
+                ctx.accounts.mothership_program.to_account_info(),
+                safe_pump::cpi::accounts::GlobalTaxSwap {
+                    global_state: ctx.accounts.global_state.to_account_info(),
+                    user: ctx.accounts.user.to_account_info(),
+                    user_sol: ctx.accounts.user_sol.to_account_info(),
+                    vault: ctx.accounts.vault.to_account_info(),
+                    expected_vault: ctx.accounts.expected_vault.to_account_info(),
+                    lp_vault: ctx.accounts.lp_vault.to_account_info(),
+                    treasury_vault: ctx.accounts.treasury_vault.to_account_info(),
+                    rewards: ctx.accounts.rewards.to_account_info(),
+                    badge_holders: ctx.accounts.badge_holders.to_account_info(),
+                    velocity: ctx.accounts.velocity.to_account_info(),
+                    token_program: ctx.accounts.token_program.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                },
+            ),
+            amount_in, is_buy, minimum_amount_out, bls_sig, bls_pk, nonce,
+        )?;
+
+        let net_amount = amount_in * 9750 / 10_000;
+
+        // MCAP calculation
+        let mcap_lamports = if contract.vault_token_balance > 0 {
+            (contract.vault_sol_balance as u128 * contract.total_supply as u128 / contract.vault_token_balance as u128) as u64
+        } else { 0 };
+
+        // Velocity tier
+        let tier_idx = FIB_MCAP_THRESHOLDS_LAMPORTS.iter()
+            .position(|&t| mcap_lamports >= t)
+            .unwrap_or(7);
+
+        if is_buy {
+            let limit = FIB_VELOCITY_SOL[tier_idx] * LAMPORTS_PER_SOL;
+            let new_total = ctx.accounts.velocity.total_bought_sol.checked_add(net_amount).ok_or(ChildError::MathError)?;
+            require!(new_total <= limit, ChildError::ExceedsVelocityLimit);
+            ctx.accounts.velocity.total_bought_sol = new_total;
+            if ctx.accounts.velocity.block_slot != clock.slot {
+                ctx.accounts.velocity.block_slot = clock.slot;
+            }
         }
 
-        let mcap_lamports = if meme.vault_tokens > 0 {
-            (meme.vault_sol as u128) * (meme.total_supply as u128) / (meme.vault_tokens as u128)
-        } else { 0 } as u64;
+        // Dynamic Fib caps
+        let fib_bps = if mcap_lamports >= contract.top_tier_mcap_sol * LAMPORTS_PER_SOL {
+            MAX_SWAP_BPS_AT_TOP_TIER
+        } else {
+            let tier = FIB_MCAP_THRESHOLDS.iter().enumerate()
+                .find(|(_, &t)| mcap_lamports >= t * LAMPORTS_PER_SOL)
+                .map(|(i, _)| i)
+                .unwrap_or(7);
+            FIB_START_BPS + FIB_TIERS[tier]
+        };
 
-        let fib_bps = get_fib_tier(mcap_lamports, meme.top_tier_mcap_sol);
-        let max_buy_allowed = meme.total_supply * fib_bps / 10_000;
+        let max_buy_allowed = contract.total_supply * fib_bps / 10_000;
         let max_sell_allowed = ctx.accounts.user_token.amount * fib_bps / 10_000;
 
         if is_buy {
-            require!(amount_in <= max_buy_allowed.min(meme.total_supply * meme.max_buy_bps / 10_000), MemeTemplateError::ExceedsFibBuy);
+            require!(net_amount <= max_buy_allowed.min(contract.total_supply * contract.max_buy_bps / 10_000), ChildError::ExceedsFibBuy);
         } else {
-            require!(amount_in <= max_sell_allowed.min(ctx.accounts.user_token.amount * meme.max_sell_bps / 10_000), MemeTemplateError::ExceedsFibSell);
+            require!(amount_in <= max_sell_allowed.min(ctx.accounts.user_token.amount * contract.max_sell_bps / 10_000), ChildError::ExceedsFibSell);
         }
 
-        let global_tax = amount_in * GLOBAL_TAX / 10_000;
-        let local_tax = amount_in * meme.swap_fee_bps / 10_000;
-        let lp_amount = amount_in - global_tax - local_tax;
-
-        if meme.bonded {
-            raydium_cp_swap::cpi::swap_base_in(CpiContext::new(
+        // Execute swap
+        if contract.bonded {
+            swap_base_in(CpiContext::new(
                 ctx.accounts.raydium_program.to_account_info(),
-                raydium_cp_swap::cpi::accounts::SwapBaseIn {
+                SwapBaseIn {
                     pool_state: ctx.accounts.pool_state.to_account_info(),
                     user_source_token: if is_buy { ctx.accounts.user_sol.to_account_info() } else { ctx.accounts.user_token.to_account_info() },
                     user_destination_token: if is_buy { ctx.accounts.user_token.to_account_info() } else { ctx.accounts.user_sol.to_account_info() },
-                    token_0_vault: ctx.accounts.vault.to_account_info(),
-                    token_1_vault: ctx.accounts.vault_sol.to_account_info(),
+                    token_0_vault: ctx.accounts.token_vault.to_account_info(),
+                    token_1_vault: ctx.accounts.sol_vault.to_account_info(),
                     token_program: ctx.accounts.token_program.to_account_info(),
                     remaining_accounts: vec![],
                 },
-            ), SwapBaseInput { amount: lp_amount, minimum_amount_out: min_out })?;
-        } else {
-            token::transfer(CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer { from: ctx.accounts.user_sol.to_account_info(), to: ctx.accounts.vault_sol.to_account_info(), authority: ctx.accounts.user.to_account_info() },
-            ), lp_amount)?;
-            let price = (meme.vault_sol as u128) * 1_000_000_000 / (meme.vault_tokens as u128);
-            let tokens_out = (lp_amount as u128) * 1_000_000_000 / price;
+            ), SwapBaseInput { amount_in: if is_buy { net_amount } else { amount_in }, minimum_amount_out })?;
+        } else if is_buy {
+            token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), Transfer {
+                from: ctx.accounts.user_sol.to_account_info(),
+                to: ctx.accounts.sol_vault_pre.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            }), net_amount)?;
+
+            let tokens_out = (net_amount as u128)
+                .checked_mul(contract.vault_token_balance as u128)
+                .ok_or(ChildError::MathError)?
+                .checked_div(contract.vault_sol_balance.max(1) as u128)
+                .ok_or(ChildError::MathError)? as u64;
+
             token::mint_to(CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                MintTo { mint: ctx.accounts.mint.to_account_info(), to: ctx.accounts.user_token.to_account_info(), authority: ctx.accounts.mint_authority.to_account_info() },
-                &[&[b"mint_auth", ctx.accounts.mint.key().as_ref(), &[ctx.bumps.mint_authority]]],
-            ), tokens_out as u64)?;
-            meme.vault_sol += lp_amount;
-            meme.vault_tokens -= tokens_out as u64;
+                MintTo { mint: ctx.accounts.mint.to_account_info(), to: ctx.accounts.user_token.to_account_info(), authority: ctx.accounts.contract.to_account_info() },
+                &[&[b"contract", ctx.accounts.deployer.key().as_ref(), &[contract.bump]]]
+            ), tokens_out)?;
+
+            contract.vault_sol_balance += net_amount;
+            contract.vault_token_balance -= tokens_out;
         }
 
-        token::transfer(CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer { from: ctx.accounts.user_sol.to_account_info(), to: ctx.accounts.mothership_sol_vault.to_account_info(), authority: ctx.accounts.user.to_account_info() },
-        ), global_tax)?;
-
-        if local_tax > 0 {
-            let treasury_ata = get_ata(&meme.treasurer, &ctx.accounts.sol_mint.key());
-            invoke(&spl_associated_token_account::instruction::create_associated_token_account(
-                &ctx.accounts.user.key(), &meme.treasurer, &ctx.accounts.sol_mint.key(), &spl_token::ID,
-            ), &[
-                ctx.accounts.user.to_account_info(),
-                treasury_ata.to_account_info(),
-                ctx.accounts.token_program.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-                ctx.accounts.sol_mint.to_account_info(),
-            ])?;
-            token::transfer(CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer { from: ctx.accounts.user_sol.to_account_info(), to: treasury_ata.to_account_info(), authority: ctx.accounts.user.to_account_info() },
-            ), local_tax)?;
-        }
-
-        safe_pump::cpi::global_tax_swap(CpiContext::new(
-            ctx.accounts.mothership_program.to_account_info(),
-            safe_pump::cpi::accounts::GlobalTaxSwap {
-                contract: ctx.accounts.mothership_contract.to_account_info(),
-                user: ctx.accounts.user.to_account_info(),
-                user_ata: ctx.accounts.user_sol.to_account_info(),
-                user_safepump_ata: ctx.accounts.user_token.to_account_info(),
-                vault: ctx.accounts.mothership_vault.to_account_info(),
-                sol_vault: ctx.accounts.mothership_sol_vault.to_account_info(),
-                lp_vault: ctx.accounts.mothership_lp.to_account_info(),
-                badge_vault: ctx.accounts.mothership_badge_vault.to_account_info(),
-                swap_rewards_vault: ctx.accounts.mothership_rewards_vault.to_account_info(),
-                mint: ctx.accounts.mothership_mint.to_account_info(),
-                owner: ctx.accounts.mint_authority.to_account_info(),
-                badge_holders: ctx.accounts.badge_holders.to_account_info(),
-                user_swap_data: ctx.accounts.user_state.to_account_info(),
-                reward_distribution: ctx.accounts.reward_dist.to_account_info(),
-                meme_coin_data: ctx.accounts.meme_token.to_account_info(),
-                pool_state: ctx.accounts.pool_state.to_account_info(),
-                raydium_program: ctx.accounts.raydium_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info(),
-            },
-        ), global_tax, is_buy, ctx.program_id)?;
-
-        if !meme.bonded && meme.vault_sol >= BOND_THRESHOLD_SOL {
+        // Auto-bond
+        if !contract.bonded && contract.vault_sol_balance >= BOND_THRESHOLD_SOL {
             create_pool(CpiContext::new_with_signer(
                 ctx.accounts.raydium_program.to_account_info(),
                 CreatePool {
                     pool_state: ctx.accounts.pool_state.to_account_info(),
-                    token0_vault: ctx.accounts.vault.to_account_info(),
-                    token1_vault: ctx.accounts.vault_sol.to_account_info(),
+                    token_0_vault: ctx.accounts.token_vault_pre.to_account_info(),
+                    token_1_vault: ctx.accounts.sol_vault_pre.to_account_info(),
                     lp_mint: ctx.accounts.lp_mint.to_account_info(),
                     amm_config: ctx.accounts.amm_config.to_account_info(),
-                    authority: ctx.accounts.mint_authority.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
                     observation_state: ctx.accounts.observation_state.to_account_info(),
                     create_pool_fee: ctx.accounts.create_pool_fee.to_account_info(),
                     token_program: ctx.accounts.token_program.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
                     rent: ctx.accounts.rent.to_account_info(),
                 },
-                &[&[b"mint_auth", ctx.accounts.mint.key().as_ref(), &[ctx.bumps.mint_authority]]],
+                &[&[b"contract", ctx.accounts.deployer.key().as_ref(), &[contract.bump]]],
             ))?;
-            meme.lp_addr = Some(ctx.accounts.pool_state.key());
-            meme.bonded = true;
+            contract.bonded = true;
         }
 
-        // === AUTO-TRIGGER AIRDROP IF 1000+ CLAIMERS ===
-        if meme.airdrop_enabled && !meme.airdrop_triggered && ctx.accounts.airdrop_registry.claimers.len() >= AIRDROP_TRIGGER_COUNT {
-            safe_pump::cpi::trigger_airdrop(CpiContext::new(
-                ctx.accounts.mothership_program.to_account_info(),
-                safe_pump::cpi::accounts::TriggerAirdrop {
-                    contract: ctx.accounts.mothership_contract.to_account_info(),
-                    owner: ctx.accounts.deployer.to_account_info(),
-                    airdrop_registry: ctx.accounts.airdrop_registry.to_account_info(),
-                    mint: ctx.accounts.mint.to_account_info(),
-                    meme_token: ctx.accounts.meme_token.to_account_info(),
-                    token_program: ctx.accounts.token_program.to_account_info(),
-                    system_program: ctx.accounts.system_program.to_account_info(),
-                    associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-                },
-            ), ctx.program_id)?;
-            meme.airdrop_triggered = true;
-        }
+        ctx.accounts.user_state.last_swap_timestamp = clock.unix_timestamp;
+        ctx.accounts.vault.nonce = nonce + 1;
 
-        meme.swap_count += 1;
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FULL CONTEXTS — MEME TEMPLATE v4
+// CONTEXTS
 // ─────────────────────────────────────────────────────────────────────────────
-
 #[derive(Accounts)]
-pub struct InitializeMeme<'info> {
-    #[account(
-        init,
-        payer = deployer,
-        space = 8 + 8 + 4+32 + 4+16 + 4+288 + 8 + 8 + 8 + 8 + 1 + 4*32 + 4*8 + 8 + 32 + 8 + 8 + 8 + 1 + 1 + 33 + 1 + 8 + 8 + 1 + 8 + 8 + 1,
-        seeds = [b"meme", mint.key().as_ref()],
-        bump
-    )]
-    pub meme_token: Account<'info, MemeToken>,
-    #[account(mut)]
-    pub mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub deployer: Signer<'info>,
-    #[account(seeds = [b"mint_auth", mint.key().as_ref()], bump)]
-    pub mint_authority: SystemAccount<'info>,
-    #[account(mut)]
-    pub mothership_contract: Account<'info, safe_pump::TokenContract>,
-    #[account(
-        init_if_needed,
-        payer = deployer,
-        space = 8 + 8 + 2000*64,
-        seeds = [b"registry", mothership_contract.key().as_ref()],
-        bump
-    )]
-    pub registry: Account<'info, safe_pump::MemeCoinRegistry>,
-    #[account(seeds = [b"airdrop_registry"], bump)]
-    pub airdrop_registry: Account<'info, safe_pump::AirdropRegistry>,
-    #[account(address = SAFEPUMP_MOTHERSHIP_ID)]
-    pub mothership_program: Program<'info, safe_pump::program::SafePump>,
+pub struct InitializeContract<'info> {
+    #[account(init, payer = deployer, space = 500, seeds = [b"contract", deployer.key().as_ref()], bump)]
+    pub contract: Account<'info, TokenContract>,
+    #[account(mut)] pub deployer: Signer<'info>,
+    #[account(mut)] pub mint: Account<'info, Mint>,
+    #[account(address = MOTHERSHIP_PROGRAM_ID)] pub mothership_program: Program<'info, safe_pump::program::SafePump>,
+    #[account(mut)] pub registry: Account<'info, safe_pump::MemeCoinRegistry>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
-pub struct MintToVault<'info> {
-    #[account(mut)]
-    pub meme_token: Account<'info, MemeToken>,
-    #[account(mut)]
-    pub mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub vault_sol: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub deployer: Signer<'info>,
-    #[account(mut)]
-    pub deployer_sol: Account<'info, TokenAccount>,
-    #[account(seeds = [b"mint_auth", mint.key().as_ref()], bump)]
-    pub mint_authority: SystemAccount<'info>,
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-}
+pub struct ChildSwap<'info> {
+    #[account(mut)] pub user: Signer<'info>,
+    #[account(mut)] pub user_sol: Account<'info, TokenAccount>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub mint: Account<'info, Mint>,
+    #[account(mut, seeds = [b"contract", contract.deployer.key().as_ref()], bump = contract.bump)]
+    pub contract: Account<'info, TokenContract>,
 
-#[derive(Accounts)]
-pub struct Swap<'info> {
-    #[account(mut)]
-    pub meme_token: Account<'info, MemeToken>,
-    #[account(mut)]
-    pub mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub user: Signer<'info>,
-    #[account(mut)]
-    pub user_sol: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub vault_sol: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub mothership_sol_vault: Account<'info, TokenAccount>,
-    #[account(seeds = [b"mint_auth", mint.key().as_ref()], bump)]
-    pub mint_authority: SystemAccount<'info>,
-    #[account(mut)]
-    pub mothership_contract: Account<'info, safe_pump::TokenContract>,
-    #[account(mut)]
-    pub mothership_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub mothership_lp: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub mothership_badge_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub mothership_rewards_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub mothership_mint: Account<'info, Mint>,
-    #[account(mut, seeds = [b"badge-holders", mothership_mint.key().as_ref()], bump)]
-    pub badge_holders: Account<'info, safe_pump::BadgeHolders>,
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = 8 + 8 + 8 + 8 + 1,
-        seeds = [b"user-swap-data", user.key().as_ref(), mint.key().as_ref()],
-        bump
-    )]
-    pub user_state: Account<'info, safe_pump::UserSwapData>,
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = 8 + (40 * 100) + 8 + 8 + 1,
-        seeds = [b"reward-distribution", mothership_mint.key().as_ref()],
-        bump
-    )]
-    pub reward_dist: Account<'info, safe_pump::RewardDistribution>,
-    #[account(seeds = [b"airdrop_registry"], bump)]
-    pub airdrop_registry: Account<'info, safe_pump::AirdropRegistry>,
-    #[account(mut)]
-    pub pool_state: AccountInfo<'info>,
-    #[account(mut)]
-    pub lp_mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub amm_config: AccountInfo<'info>,
-    #[account(mut)]
-    pub observation_state: AccountInfo<'info>,
-    #[account(mut)]
-    pub create_pool_fee: AccountInfo<'info>,
-    #[account(address = SAFEPUMP_MOTHERSHIP_ID)]
-    pub mothership_program: Program<'info, safe_pump::program::SafePump>,
-    #[account(address = raydium_cp_swap::id())]
-    pub raydium_program: Program<'info, raydium_cp_swap::program::RaydiumCpSwap>,
+    // Pre-bond
+    #[account(mut)] pub token_vault_pre: Account<'info, TokenAccount>,
+    #[account(mut)] pub sol_vault_pre: Account<'info, TokenAccount>,
+
+    // Post-bond
+    #[account(mut)] pub pool_state: AccountInfo<'info>,
+    #[account(mut)] pub token_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub sol_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub lp_mint: Account<'info, Mint>,
+    #[account(mut)] pub amm_config: AccountInfo<'info>,
+    #[account(mut)] pub authority: AccountInfo<'info>,
+    #[account(mut)] pub observation_state: AccountInfo<'info>,
+    #[account(mut)] pub create_pool_fee: AccountInfo<'info>,
+
+    #[account(address = raydium_cp_swap::id())] pub raydium_program: Program<'info, raydium_cp_swap::program::RaydiumCpSwap>,
+
+    // Mothership
+    #[account(address = MOTHERSHIP_PROGRAM_ID)] pub mothership_program: Program<'info, safe_pump::program::SafePump>,
+    #[account(mut)] pub global_state: Account<'info, safe_pump::GlobalState>,
+    #[account(mut)] pub lp_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub treasury_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub rewards: Account<'info, safe_pump::RewardDistribution>,
+    #[account(mut)] pub badge_holders: Account<'info, safe_pump::BadgeHolders>,
+
+    // ZK Vault
+    #[account(mut, seeds = [b"zk_vault", user.key().as_ref()], bump)] pub vault: Account<'info, Vault>,
+    #[account(seeds = [b"zk_vault", user.key().as_ref()], bump)] pub expected_vault: AccountInfo<'info>,
+
+    // Velocity
+    #[account(init_if_needed, payer = user, space = 8 + 8 + 8 + 1, seeds = [b"velocity", &clock.slot.to_le_bytes()], bump)]
+    pub velocity: Account<'info, safe_pump::BlockSwapState>,
+
+    #[account(mut)] pub user_state: Account<'info, UserSwapData>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub clock: Sysvar<'info, Clock>,
     pub rent: Sysvar<'info, Rent>,
-    pub sol_mint: Account<'info, Mint>,
 }
 
-fn get_ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[owner.as_ref(), spl_token::ID.as_ref(), mint.as_ref()], &spl_associated_token_account::ID).0
-}
+pub use safe_pump::{GlobalState, BlockSwapState, MemeCoinRegistry, RewardDistribution, BadgeHolders};

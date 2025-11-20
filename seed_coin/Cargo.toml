@@ -10,9 +10,10 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 anchor-lang = "0.31.1"
 anchor-spl = "0.31.1"
+raydium-cp-swap = { path = "../safe_pump/raydium-cp-swap/programs/cp-swap", features = ["cpi"] }
 
-# Reference to mothership (for CPI back)
-mothership = { path = "../safe_pump", features = ["cpi"] }
+# Interface only
+safe_pump_interface = { path = "../safe_pump_interface", features = ["cpi"] }
 
 [features]
 cpi = []
