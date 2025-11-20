@@ -1,0 +1,14 @@
+[package]
+name = "safe_pump_interface"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+
+[features]
+cpi = []
