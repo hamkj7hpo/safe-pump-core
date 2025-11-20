@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-# git_photons.py v99 — THE ABSOLUTE FINAL LOCK
-# FULL FLEET: safe_pump + seed_coin + interface + mothership + meme_template + warp_core
-# 100% CORRECT PATHS | SSH ONLY | FORCE LOCK | WARP CORE INCLUDED
-# @archon_sol + grok — NOV 19 2025 — THIS IS THE ONE
+# git_photons.py v99.1 — WARP CORE LOCKED + FINAL FLEET
+# FULL 6-REPO COVERAGE | SSH ONLY | FORCE LOCK | IMMORTAL
+# @archon_sol + grok — NOV 19 2025 — THE CERTIFICATE
 
 import os
 import subprocess
@@ -12,19 +11,19 @@ from pathlib import Path
 # ROOT: /var/www/html/program
 ROOT = Path("/var/www/html/program")
 
-# FULL FLEET — INCLUDING WARP CORE
+# FULL FLEET — WARP CORE INCLUDED WITH CORRECT REMOTE
 REPOS = {
     "safe_pump":           {"path": ROOT / "safe_pump",           "branch": "master", "remote": "git@github.com:hamkj7hpo/safe-pump-core.git"},
     "seed_coin":           {"path": ROOT / "seed_coin",           "branch": "master", "remote": "git@github.com:hamkj7hpo/safe-pump-core.git"},
     "safe_pump_interface": {"path": ROOT / "safe_pump_interface", "branch": "master", "remote": "git@github.com:hamkj7hpo/safe-pump-core.git"},
     "mothership":          {"path": ROOT / "mothership",          "branch": "main",   "remote": "git@github.com:hamkj7hpo/safe-pump-mothership.git"},
     "meme_template":       {"path": ROOT / "meme_template",       "branch": "main",   "remote": "git@github.com:hamkj7hpo/meme_template_rust.git"},
-    "warp_core":           {"path": ROOT.parent / "warp_core",    "branch": "master", "remote": "git@github.com:hamkj7hpo/warp_core.git"},
+    "warp_core":           {"path": ROOT.parent / "warp_core",    "branch": "master", "remote": "git@github.com:hamkj7hpo/safe-pump-compat-bls.git"},
 }
 
 print("\n" + "█" * 120)
-print("GIT PHOTONS v99 — THE ABSOLUTE FINAL LOCK")
-print("FULL FLEET INCLUDING WARP CORE | SSH ONLY | FORCE LOCK | IMMORTAL")
+print("GIT PHOTONS v99.1 — WARP CORE LOCKED + FINAL FLEET")
+print("FULL 6-REPO COVERAGE | SSH ONLY | FORCE LOCK | CERTIFICATE GENERATED")
 print("█" * 120)
 
 def run(cmd, cwd):
@@ -78,6 +77,7 @@ for name, info in REPOS.items():
         print(f"SUCCESS → {name} locked at {short_hash}")
     else:
         print(f"FAILED → {name} | {push_result.stderr.strip()}")
+        continue
 
 print("\n" + "█" * 120)
 print("FULL FLEET LOCKDOWN COMPLETE")
@@ -91,15 +91,13 @@ for name, (full, short) in hashes.items():
 print("\n" + "█" * 120)
 if success_count == len(REPOS):
     print("PERFECTION ACHIEVED")
-    print("ALL REPOS LOCKED VIA SSH")
-    print("UPSTREAM BRANCHES SET")
-    print("FLEET IS NOW IMMORTAL")
+    print("ALL 6 REPOS LOCKED VIA SSH")
     print("WARP CORE INCLUDED")
     print("THE VAULT IS SEALED")
     print("SPMP LAUNCH WINDOW: OPEN")
     print("ARCHON — FIRE AT WILL.")
 else:
-    print("WARNING: Some repos failed. Re-run after fixing SSH keys.")
+    print("WARNING: Some repos failed. Check SSH keys.")
 print("73")
 print("SPMP FOREVER.")
 print("█" * 120)
